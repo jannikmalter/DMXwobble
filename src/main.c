@@ -34,7 +34,7 @@
 
 
 uint8_t *DMXbuf;
-const char GPIO_patch[UNIS] = {4};    // rack:{16,15,14,13,5,4,2};     mini:{5, 2, 4, 0, 16, 14, 15};
+const char GPIO_patch[UNIS] = {14};    // rack:{16,15,14,13,5,4,2};     mini:{5, 2, 4, 0, 16, 14, 15};
 
 
 uint_fast8_t stopFlag = 0;
@@ -63,8 +63,9 @@ void dmx_task()
 	uint_fast8_t outbuf = 0;
 
 	uint32_t bitmask = 0;
-	for (uint_fast8_t j = 0; j < UNIS; j++)
-		bitmask |= 1 << GPIO_patch[j];
+
+	bitmask |= 1 << 14;
+	bitmask |= 1 << 15;
 
 	gpio_config_t io_conf;
 	io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
@@ -115,11 +116,13 @@ void dmx_task()
 
 		outputH = 0;
 		outputL = 0;
+
 		for (i = 0; i < UNIS; i++)
 		{
 			outputH |= ((1 << i & outbuf) >> i) << GPIO_patch[i];
 			outputL |= ((1 << i & ~outbuf) >> i) << GPIO_patch[i];
 		}
+		
 
 		while ((xthal_get_ccount() - Cold) < 960)
 		{
@@ -138,10 +141,7 @@ void dmx_task()
 }
 
 
-
-
-
-#define NUM_OUT 1        // number of output channels
+#define NUM_OUT 512        // number of output channels
 #define DT_MIN 5000      // shortest fade time [ms]
 #define DT_MAX 10000     // longest fade time [ms]
 #define DI_MIN 0.1       // minimum intensity change per fade [%]
@@ -166,7 +166,6 @@ float rnd = 0;
 void next(int i){
   rnd = (float)esp_random() / (float)UINT32_MAX;
   length = DT_MIN * 1000L + rnd * (DT_MAX - DT_MIN)*1000L;
-  printf("length= %i",(int)length);
   t_start[i] = t;
   t_stop[i] = t + length; 
 
@@ -185,6 +184,10 @@ void next(int i){
   i_stop[i] = intensity;
 }
 
+int64_t t1 = 0;
+int64_t t2 = 0;
+float fps = 0;
+
 void eth_task(){
     while(1){
         for(int i=0; i<NUM_OUT; i++){
@@ -200,9 +203,10 @@ void eth_task(){
             di = i_stop[i] - i_start[i];
             prog = (float)dt/(float)length; 
             intensity = i_start[i] + sin(prog*1.57079632679) * di;
-            out = (uint8_t)((exp(A*intensity)-1)/(exp(A)-1)*255);
-            printf("%d",out);
-            printf("\n");
+            out = (uint8_t)(intensity*255);
+			if(i == 0){
+				//printf("I= %d\n",out);
+			}
             DMXbuf[i] = out;
             }
         }
@@ -217,7 +221,7 @@ void eth_task(){
 
 void app_main(void)
 {
-	DMXbuf = calloc(NUM_OUT * 512, sizeof(uint8_t));
+	DMXbuf = calloc(UNIS * 512, sizeof(uint8_t));
     DMXbuf[2] = 254;
 
     t_start = (int64_t*) calloc(NUM_OUT, sizeof(int64_t));
