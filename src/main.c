@@ -28,13 +28,14 @@
 // NODE CONFIG
 
 #define BREAK 30
-#define MAB 10
+#define MAB 2
 
 #define UNIS 1
 
 
 uint8_t *DMXbuf;
 const char GPIO_patch[UNIS] = {14};    // rack:{16,15,14,13,5,4,2};     mini:{5, 2, 4, 0, 16, 14, 15};
+uint_fast8_t DMX_repatch[UNIS] = {0};
 
 
 uint_fast8_t stopFlag = 0;
@@ -82,14 +83,16 @@ void dmx_task()
 	while (1)
 	{
 		outbuf = 0b00000000;
-
-
-		if (curbit < BREAK + MAB)
+		if (curbit < BREAK)
+		{
+			outbuf = 0b00000000;
+		}
+		else if (curbit < BREAK + MAB)
 		{
 			outbuf = 0b11111111;
 		}
 
-		else if (curbit >= BREAK + MAB)
+		else
 		{
 			curchan = (curbit - BREAK - MAB) / 11;
 			chanbit = (curbit - BREAK - MAB) % 11;
@@ -107,7 +110,7 @@ void dmx_task()
 					if (curchan == 0)
 						chanval = 0;
 					else
-						chanval = DMXbuf[512 * i + curchan - 1];
+						chanval = DMXbuf[512 * DMX_repatch[i] + curchan - 1];
 					if (!((chanval & (1 << (chanbit - 1))) == 0))
 						outbuf |= (0b00000001 << i);
 				}
@@ -116,13 +119,14 @@ void dmx_task()
 
 		outputH = 0;
 		outputL = 0;
-
 		for (i = 0; i < UNIS; i++)
 		{
 			outputH |= ((1 << i & outbuf) >> i) << GPIO_patch[i];
 			outputL |= ((1 << i & ~outbuf) >> i) << GPIO_patch[i];
+
+			outputH |= ((1 << i & ~outbuf) >> i) << (GPIO_patch[i]+1);
+			outputL |= ((1 << i & outbuf) >> i) << (GPIO_patch[i]+1);
 		}
-		
 
 		while ((xthal_get_ccount() - Cold) < 960)
 		{
@@ -133,7 +137,8 @@ void dmx_task()
 		Cold += 960;
 
 		curbit++;
-        if (curbit >= (512 + 1) * 11 + BREAK + MAB)  //450
+		
+		if (curbit >= (512 + 1) * 11 + BREAK + MAB)  //450
 		{
 			curbit = 0;
 		}
@@ -222,7 +227,6 @@ void eth_task(){
 void app_main(void)
 {
 	DMXbuf = calloc(UNIS * 512, sizeof(uint8_t));
-    DMXbuf[2] = 254;
 
     t_start = (int64_t*) calloc(NUM_OUT, sizeof(int64_t));
     t_stop = (int64_t*) calloc(NUM_OUT, sizeof(int64_t));
